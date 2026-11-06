@@ -20,13 +20,20 @@ Ce projet permet d'automatiser la gestion des comptes étudiants sous Linux à l
 ## 4. Scripts utilisés
 
 ### creer_comptes.sh
-Permet de créer les comptes étudiants à partir d'un fichier CSV et de les affecter à leurs groupes.
+
+Permet de créer les comptes étudiants à partir d'un fichier CSV et de les affecter à leurs groupes, avec génération de mots de passe.
 
 ### supprimer_etudiant.sh
-Permet de supprimer un compte étudiant.
+
+Permet de supprimer un seul compte étudiant.
+
+### supprimer_comptes.sh (Bonus)
+
+Permet de supprimer plusieurs comptes à partir d'un fichier CSV, après avoir sauvegardé leurs répertoires personnels (Home). Il propose également un mode simulation (-n) et une option d'aide (-h).
 
 ### sauvegarde_homes.sh
-Permet de sauvegarder les répertoires personnels des utilisateurs.
+
+Permet de sauvegarder les répertoires personnels des utilisateurs et de conserver les dernières archives.
 
 ## 5. Gestion des groupes
 Les étudiants sont répartis dans les groupes gi1 et gi2.
