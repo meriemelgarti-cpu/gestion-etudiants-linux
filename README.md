@@ -53,11 +53,13 @@ Une tâche planifiée est configurée pour lancer la sauvegarde chaque jour à 0
 - Les répertoires partagés sont accessibles uniquement aux membres du groupe concerné.
 
 ## 8. Vérification
-Les scripts ont été vérifiés avec :
-- bash -n
-- ShellCheck
 
-La syntaxe des trois scripts est correcte et ShellCheck n'a signalé aucun avertissement.
+Les quatre scripts ont été vérifiés avec :
+
+- `bash -n`
+- `ShellCheck`
+
+La syntaxe des quatre scripts est correcte et ShellCheck n'a signalé aucun avertissement.
 
 ## 9. Conclusion
 Ce projet permet de simplifier l'administration des comptes étudiants, d'organiser les accès par groupes et d'automatiser les sauvegardes dans un environnement Linux.
