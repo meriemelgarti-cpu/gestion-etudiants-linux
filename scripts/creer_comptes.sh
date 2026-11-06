@@ -63,6 +63,8 @@ log_message() {
 # Lecture du fichier CSV ligne par ligne avec le séparateur point-virgule.
 while IFS=';' read -r login nom prenom groupe || [[ -n "$login" ]]; do
 
+    groupe="${groupe%$'\r'}"
+
     # Ignorer l'en-tête et les lignes vides.
     [[ "$login" == "login" ]] && continue
     [[ -z "$login" ]] && continue
