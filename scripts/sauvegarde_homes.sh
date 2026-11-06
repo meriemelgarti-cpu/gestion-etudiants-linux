@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Protéger les nouvelles sauvegardes avec des permissions restrictives.
 umask 077

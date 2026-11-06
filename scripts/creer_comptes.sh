@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Fichiers utilisés pour enregistrer les journaux et les identifiants.
 LOG_FILE="/var/log/creer_comptes.log"
