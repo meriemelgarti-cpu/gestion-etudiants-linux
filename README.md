@@ -1,9 +1,11 @@
 # Projet : Gestion des étudiants sous Linux
 
 ## 1. Présentation
+
 Ce projet permet d'automatiser la gestion des comptes étudiants sous Linux à l'aide de scripts Bash.
 
 ## 2. Objectifs
+
 - Créer automatiquement les comptes étudiants.
 - Organiser les étudiants par groupes.
 - Sécuriser les répertoires personnels.
@@ -13,9 +15,9 @@ Ce projet permet d'automatiser la gestion des comptes étudiants sous Linux à l
 
 ## 3. Organisation du projet
 
-- data/ : contient le fichier CSV des étudiants.
-- scripts/ : contient les scripts Bash.
-- docs/ : contient la documentation du projet.
+- `data/` : contient le fichier CSV des étudiants.
+- `scripts/` : contient les scripts Bash.
+- `docs/` : contient la documentation du projet.
 
 ## 4. Scripts utilisés
 
@@ -29,40 +31,85 @@ Permet de supprimer un seul compte étudiant.
 
 ### supprimer_comptes.sh (Bonus)
 
-Permet de supprimer plusieurs comptes à partir d'un fichier CSV, après avoir sauvegardé leurs répertoires personnels (Home). Il propose également un mode simulation (-n) et une option d'aide (-h).
+Permet de supprimer plusieurs comptes à partir d'un fichier CSV, après avoir sauvegardé leurs répertoires personnels (Home). Il propose également un mode simulation (`-n`) et une option d'aide (`-h`).
 
 ### sauvegarde_homes.sh
 
-Permet de sauvegarder les répertoires personnels des utilisateurs et de conserver les dernières archives.
+Permet de sauvegarder les répertoires personnels des utilisateurs ainsi que les répertoires partagés des groupes et de conserver les 7 dernières archives.
 
 ## 5. Gestion des groupes
-Les étudiants sont répartis dans les groupes gi1 et gi2.
+
+Les étudiants sont répartis dans les groupes `gi1` et `gi2`.
 
 Les répertoires partagés sont :
-- /srv/groupes/gi1
-- /srv/groupes/gi2
 
-Le bit SGID est activé avec la permission 2770 afin que les fichiers créés héritent du groupe du répertoire.
+- `/srv/groupes/gi1`
+- `/srv/groupes/gi2`
+
+Le bit SGID est activé avec la permission `2770` afin que les fichiers créés héritent du groupe du répertoire.
 
 ## 6. Automatisation avec Cron
+
 Une tâche planifiée est configurée pour lancer la sauvegarde chaque jour à 02:00.
 
 ## 7. Sécurité
-- Les répertoires personnels sont protégés avec la permission 700.
-- Le fichier des identifiants est protégé avec la permission 600.
+
+- Les répertoires personnels sont protégés avec la permission `700`.
+- Le fichier des identifiants est protégé avec la permission `600`.
 - Les répertoires partagés sont accessibles uniquement aux membres du groupe concerné.
+- Les mots de passe initiaux sont générés aléatoirement et doivent être changés lors de la première connexion.
 
 ## 8. Vérification
 
-Les quatre scripts ont été vérifiés avec :
+Les scripts `creer_comptes.sh` et `sauvegarde_homes.sh` ont été vérifiés avec ShellCheck, sans avertissement.
 
-- `bash -n`
-- `ShellCheck`
+Le script de création a également été testé en mode simulation (`-n`).
 
-La syntaxe des quatre scripts est correcte et ShellCheck n'a signalé aucun avertissement.
+Le script de sauvegarde a été exécuté et l'archive créée a été vérifiée.
 
-## 9. Conclusion
+## 9. Utilisation
+
+### Simulation de création des comptes
+
+```bash
+sudo bash scripts/creer_comptes.sh -n data/etudiants.csv
+```
+
+### Création réelle des comptes
+
+```bash
+sudo bash scripts/creer_comptes.sh data/etudiants.csv
+```
+
+### Sauvegarde manuelle
+
+```bash
+sudo bash scripts/sauvegarde_homes.sh
+```
+
+### Afficher l'aide du script de suppression
+
+```bash
+sudo bash scripts/supprimer_comptes.sh -h
+```
+
+### Informations importantes
+
+- Journal de création : `/var/log/creer_comptes.log`
+- Fichier des identifiants : `/root/etudiants_credentials.txt`
+- Répertoire des sauvegardes : `/var/backups/etudiants/`
+- Conservation des 7 dernières archives.
+
+### Configuration Cron
+
+```cron
+0 2 * * * /bin/bash /home/maryam/projet_gestion_etudiants/scripts/sauvegarde_homes.sh
+```
+
+## 10. Conclusion
+
 Ce projet permet de simplifier l'administration des comptes étudiants, d'organiser les accès par groupes et d'automatiser les sauvegardes dans un environnement Linux.
 
 ## Réalisé par
+
 - El Garti Meriem (Monôme)

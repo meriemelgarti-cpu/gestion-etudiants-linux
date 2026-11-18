@@ -1,49 +1,78 @@
 #!/bin/bash
 set -euo pipefail
 
-# Protéger les nouvelles sauvegardes avec des permissions restrictives.
+# Proteger les fichiers de sauvegarde.
 umask 077
 
-# Définir le répertoire de sauvegarde et le fichier journal.
+# Définir les chemins utilisés.
 BACKUP_DIR="/var/backups/etudiants"
 LOG_FILE="/var/log/sauvegarde_homes.log"
 
-# Générer une date pour donner un nom unique à chaque archive.
-DATE=$(date +%Y%m%d_%H%M%S)
-ARCHIVE="$BACKUP_DIR/sauvegarde_$DATE.tar.gz"
-
-# Vérifier que le script est exécuté avec les droits administrateur.
-if [[ $EUID -ne 0 ]]; then
+# Vérifier les droits administrateur.
+if [[ "$EUID" -ne 0 ]]; then
     echo "Erreur : ce script doit etre execute avec sudo."
     exit 1
 fi
 
-# Créer le répertoire de sauvegarde s'il n'existe pas.
-mkdir -p "$BACKUP_DIR"
-
-# Enregistrer le début de l'opération dans le journal.
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Debut de la sauvegarde" >> "$LOG_FILE"
-
-# Compresser les répertoires personnels et les répertoires partagés.
-if tar -czf "$ARCHIVE" /home /srv/groupes 2>/dev/null; then
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Sauvegarde reussie : $ARCHIVE" >> "$LOG_FILE"
-else
-    # Enregistrer l'erreur si la sauvegarde échoue.
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Erreur pendant la sauvegarde" >> "$LOG_FILE"
+# Vérifier la présence des répertoires à sauvegarder.
+if [[ ! -d /home || ! -d /srv/groupes ]]; then
+    echo "Erreur : repertoire /home ou /srv/groupes introuvable."
     exit 1
 fi
 
-# Conserver uniquement les sept sauvegardes les plus récentes.
-# Supprimer les archives plus anciennes.
-find "$BACKUP_DIR" -maxdepth 1 -type f -name 'sauvegarde_*.tar.gz' -printf '%T@ %p\n' |
+# Créer et protéger le répertoire de sauvegarde.
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
+# Préparer le fichier journal.
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+
+# Fonction de journalisation.
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+# Générer le nom de l'archive.
+DATE=$(date +%Y%m%d_%H%M%S)
+ARCHIVE="$BACKUP_DIR/sauvegarde_$DATE.tar.gz"
+TEMP_ARCHIVE="$ARCHIVE.tmp"
+
+# Enregistrer le début de la sauvegarde.
+log_message "Debut de la sauvegarde."
+
+# Créer l'archive temporaire.
+if tar -czf "$TEMP_ARCHIVE" /home /srv/groupes 2>/dev/null; then
+
+    # Vérifier l'intégrité de l'archive.
+    if tar -tzf "$TEMP_ARCHIVE" >/dev/null 2>&1; then
+        mv "$TEMP_ARCHIVE" "$ARCHIVE"
+        chmod 600 "$ARCHIVE"
+        log_message "Sauvegarde reussie : $ARCHIVE"
+    else
+        rm -f "$TEMP_ARCHIVE"
+        log_message "Erreur : archive invalide."
+        exit 1
+    fi
+
+else
+    # Supprimer l'archive incomplète en cas d'échec.
+    rm -f "$TEMP_ARCHIVE"
+    log_message "Erreur pendant la sauvegarde."
+    exit 1
+fi
+
+# Conserver uniquement les sept archives les plus récentes.
+find "$BACKUP_DIR" -maxdepth 1 -type f \
+    -name 'sauvegarde_*.tar.gz' -printf '%T@ %p\n' |
     sort -rn |
     tail -n +8 |
     cut -d' ' -f2- |
     while IFS= read -r file; do
         rm -f -- "$file"
-        echo "$(date '+%Y-%m-%d %H:%M:%S') - Ancienne sauvegarde supprimee : $file" >> "$LOG_FILE"
+        log_message "Ancienne sauvegarde supprimee : $file"
     done
 
-# Enregistrer la fin de l'opération et afficher le résultat.
-echo "$(date '+%Y-%m-%d %H:%M:%S') - Fin de la sauvegarde" >> "$LOG_FILE"
+# Enregistrer la fin de l'opération.
+log_message "Fin de la sauvegarde."
 echo "Sauvegarde terminee : $ARCHIVE"

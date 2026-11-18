@@ -1,130 +1,186 @@
 #!/bin/bash
-set -euo pipefail
+# creer_comptes.sh : création automatique des comptes étudiants depuis un CSV.
+# Usage : sudo bash creer_comptes.sh [-n] fichier.csv
+# -n : mode simulation sans modification du système.
+# Codes de sortie : 0 = succès, 1 = erreur, 2 = mauvais usage.
 
-# Fichiers utilisés pour enregistrer les journaux et les identifiants.
+set -euo pipefail
+umask 077
+
+# Fichiers et répertoires utilisés.
 LOG_FILE="/var/log/creer_comptes.log"
 CREDENTIALS_FILE="/root/etudiants_credentials.txt"
+GROUPS_DIR="/srv/groupes"
 
-# Initialisation du mode simulation et du fichier CSV.
+# Initialisation.
 SIMULATION=false
-CSV_FILE=""
-
-# Compteurs pour le bilan final.
 CREATED=0
 IGNORED=0
 ERRORS=0
 
-# Vérification des privilèges administrateur.
-if [[ $EUID -ne 0 ]]; then
-    echo "Erreur : ce script doit être exécuté avec sudo."
+# Vérifier les privilèges administrateur.
+if [[ "$EUID" -ne 0 ]]; then
+    echo "Erreur : ce script doit etre execute avec sudo." >&2
     exit 1
 fi
 
-# Activation du mode simulation avec l'option -n.
-if [[ "$1" == "-n" ]]; then
+# Activer le mode simulation.
+if [[ "${1:-}" == "-n" ]]; then
     SIMULATION=true
     shift
 fi
 
-# Vérification du nombre d'arguments.
+# Vérifier les arguments.
 if [[ $# -ne 1 ]]; then
-    echo "Usage : sudo $0 [-n] fichier.csv"
+    echo "Usage : sudo bash $0 [-n] fichier.csv" >&2
     exit 2
 fi
 
-# Récupération du chemin du fichier CSV.
 CSV_FILE="$1"
 
-# Vérification de l'existence du fichier CSV.
-if [[ ! -f "$CSV_FILE" ]]; then
-    echo "Erreur : fichier CSV introuvable."
+# Vérifier le fichier CSV.
+if [[ ! -f "$CSV_FILE" || ! -r "$CSV_FILE" ]]; then
+    echo "Erreur : fichier CSV introuvable ou illisible." >&2
     exit 2
 fi
 
-# Préparation des fichiers de journalisation et des identifiants.
+# Préparer les fichiers sécurisés hors simulation.
 if [[ "$SIMULATION" == false ]]; then
-    touch "$LOG_FILE"
-    chmod 600 "$LOG_FILE"
-    touch "$CREDENTIALS_FILE"
-    chmod 600 "$CREDENTIALS_FILE"
+    touch "$LOG_FILE" "$CREDENTIALS_FILE"
+    chmod 600 "$LOG_FILE" "$CREDENTIALS_FILE"
+    mkdir -p "$GROUPS_DIR"
 fi
 
-# Fonction permettant d'afficher et d'enregistrer les messages.
+# Afficher et enregistrer les messages.
 log_message() {
     local message="$1"
 
     if [[ "$SIMULATION" == true ]]; then
-        echo "$message"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - $message"
     else
         echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" | tee -a "$LOG_FILE"
     fi
 }
 
-# Lecture du fichier CSV ligne par ligne avec le séparateur point-virgule.
-while IFS=';' read -r login nom prenom groupe || [[ -n "$login" ]]; do
+# Traiter le fichier CSV.
+while IFS=';' read -r login nom prenom groupe || [[ -n "${login:-}" ]]; do
 
+    # Nettoyer les caractères Windows CRLF.
+    login="${login%$'\r'}"
+    nom="${nom%$'\r'}"
+    prenom="${prenom%$'\r'}"
     groupe="${groupe%$'\r'}"
 
     # Ignorer l'en-tête et les lignes vides.
-    [[ "$login" == "login" ]] && continue
-    [[ -z "$login" ]] && continue
+    [[ "${login:-}" == "login" ]] && continue
+    [[ -z "${login:-}" ]] && continue
 
-    # Vérifier que toutes les informations obligatoires sont présentes.
-    if [[ -z "$nom" || -z "$prenom" || -z "$groupe" ]]; then
-        log_message "Erreur : ligne CSV incomplete pour $login"
-        ((ERRORS++))
+    # Vérifier les champs obligatoires.
+    if [[ -z "${nom:-}" || -z "${prenom:-}" || -z "${groupe:-}" ]]; then
+        log_message "Erreur : ligne CSV incomplete pour $login."
+        ERRORS=$((ERRORS + 1))
         continue
     fi
 
-    # Vérifier si le compte utilisateur existe déjà.
-    if id "$login" &>/dev/null; then
-        log_message "Ignore : utilisateur $login existe deja."
-        ((IGNORED++))
+    # Vérifier le format du login.
+    if [[ ! "$login" =~ ^[a-z0-9]{3,16}$ ]]; then
+        log_message "Erreur : format du login $login invalide."
+        ERRORS=$((ERRORS + 1))
         continue
     fi
 
-    # En mode simulation, afficher l'action sans créer de compte.
-    if [[ "$SIMULATION" == true ]]; then
-        log_message "[SIMULATION] Creation de $login dans le groupe $groupe"
-        ((CREATED++))
+    # Vérifier le nom du groupe.
+    if [[ ! "$groupe" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        log_message "Erreur : nom du groupe $groupe invalide."
+        ERRORS=$((ERRORS + 1))
         continue
     fi
 
-    # Créer le groupe s'il n'existe pas déjà.
+    # Créer le groupe s'il n'existe pas.
     if ! getent group "$groupe" >/dev/null; then
-        if ! groupadd "$groupe"; then
+        if [[ "$SIMULATION" == true ]]; then
+            log_message "[SIMULATION] Creation du groupe $groupe."
+        elif groupadd "$groupe"; then
+            log_message "Groupe $groupe cree."
+        else
             log_message "Erreur : creation du groupe $groupe impossible."
-            ((ERRORS++))
+            ERRORS=$((ERRORS + 1))
             continue
         fi
     fi
 
-    # Générer un mot de passe aléatoire pour le nouvel utilisateur.
-    password=$(openssl rand -base64 12)
+    # Préparer le répertoire partagé du groupe.
+    GROUP_DIR="$GROUPS_DIR/$groupe"
 
-    # Créer le compte avec son répertoire personnel et son groupe principal.
+    if [[ "$SIMULATION" == true ]]; then
+        log_message "[SIMULATION] Preparation du repertoire $GROUP_DIR avec les droits 2770 et SGID."
+    else
+        if mkdir -p "$GROUP_DIR" &&
+           chown "root:$groupe" "$GROUP_DIR" &&
+           chmod 2770 "$GROUP_DIR"; then
+            log_message "Repertoire partage $GROUP_DIR configure."
+        else
+            log_message "Erreur : configuration du repertoire $GROUP_DIR."
+            ERRORS=$((ERRORS + 1))
+            continue
+        fi
+    fi
+
+    # Ignorer les utilisateurs déjà existants.
+    if id "$login" &>/dev/null; then
+        log_message "Ignore : utilisateur $login existe deja."
+        IGNORED=$((IGNORED + 1))
+        continue
+    fi
+
+    # Mode simulation.
+    if [[ "$SIMULATION" == true ]]; then
+        log_message "[SIMULATION] Creation de l'utilisateur $login."
+        log_message "[SIMULATION] Configuration du mot de passe et du repertoire personnel en 700."
+        CREATED=$((CREATED + 1))
+        continue
+    fi
+
+    # Générer un mot de passe aléatoire.
+    if ! password=$(openssl rand -base64 12); then
+        log_message "Erreur : generation du mot de passe pour $login."
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
+    # Créer le compte utilisateur.
     if useradd -m -s /bin/bash -c "$prenom $nom" -g "$groupe" "$login"; then
 
-        # Définir le mot de passe, imposer son changement et protéger le home.
-        if echo "$login:$password" | chpasswd &&
+        # Configurer le mot de passe et les droits du répertoire personnel.
+        if printf '%s:%s\n' "$login" "$password" | chpasswd &&
            chage -d 0 "$login" &&
            chmod 700 "/home/$login"; then
 
-            # Enregistrer les identifiants dans le fichier sécurisé.
-            echo "$login:$password" >> "$CREDENTIALS_FILE"
-            log_message "Utilisateur $login cree avec succes."
-            ((CREATED++))
+            # Enregistrer les identifiants sans les afficher.
+            if printf '%s;%s\n' "$login" "$password" >> "$CREDENTIALS_FILE"; then
+                log_message "Utilisateur $login cree avec succes."
+                CREATED=$((CREATED + 1))
+            else
+                log_message "Erreur : enregistrement des identifiants de $login."
+                ERRORS=$((ERRORS + 1))
+            fi
         else
             log_message "Erreur : configuration du compte $login."
-            ((ERRORS++))
+            ERRORS=$((ERRORS + 1))
         fi
     else
         log_message "Erreur : creation du compte $login impossible."
-        ((ERRORS++))
+        ERRORS=$((ERRORS + 1))
     fi
 
-# Fin du traitement du fichier CSV.
 done < "$CSV_FILE"
 
-# Afficher le bilan final des opérations.
+# Afficher le bilan final.
 log_message "Bilan : $CREATED cree(s), $IGNORED ignore(s), $ERRORS erreur(s)."
+
+# Code de sortie final.
+if [[ "$ERRORS" -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0
